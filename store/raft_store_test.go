@@ -9,12 +9,12 @@ import (
 
 func TestBadgerRaftStore(t *testing.T) {
 	dbPath, _ := os.MkdirTemp("", "badis-raft-store-*")
-	defer os.RemoveAll(dbPath)
+	defer func() { _ = os.RemoveAll(dbPath) }()
 	fsm, err := NewFSM(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsm.Close()
+	defer func() { _ = fsm.Close() }()
 
 	// Test LogStore
 	log := &raft.Log{Index: 1, Term: 1, Data: []byte("test")}
