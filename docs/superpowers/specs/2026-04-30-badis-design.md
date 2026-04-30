@@ -6,7 +6,7 @@
 
 1.  **Network Layer:** Accepts TCP connections, parses RESP (Redis Serialization Protocol) using an existing library (e.g., `tidwall/redcon` or similar).
 2.  **Raft Layer (`hashicorp/raft`):** Handles consensus. Write commands are proposed to the Raft cluster. Read commands can be served locally (with stale reads) or routed through Raft for strong consistency.
-3.  **Storage Layer (BadgerDB):** The FSM (Finite State Machine) for Raft. Applies committed log entries to BadgerDB.
+3.  **Storage Layer (BadgerDB):** Serves as both the FSM (Finite State Machine) and the Raft LogStore/StableStore. Applies committed log entries to FSM keys.
 4.  **Command Execution:** Translates Redis commands to BadgerDB operations.
 
 ## Components

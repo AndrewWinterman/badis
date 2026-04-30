@@ -4,7 +4,7 @@
 
 **Goal:** Build a Redis-compatible, Raft-replicated server backed by BadgerDB.
 
-**Architecture:** A network server accepting RESP, proposing writes via hashicorp/raft, and applying committed entries to a BadgerDB-backed FSM.
+**Architecture:** A network server accepting RESP, proposing writes via hashicorp/raft, and applying committed entries to a BadgerDB-backed FSM. BadgerDB also serves as Raft's LogStore and StableStore.
 
 **Tech Stack:** Go, BadgerDB, hashicorp/raft, tidwall/redcon (for RESP).
 
@@ -358,6 +358,66 @@ git add server/
 git commit -m "feat: wire SET and GET to badgerdb"
 ```
 
-### Task 4: Raft Integration
+### Task 4: Raft Integration & BadgerDB LogStore
 
-*(Skipping detailed code for brevity, but this task would involve setting up `raft.NewRaft`, creating a `RaftNode` wrapper, and modifying the Server to call `raft.Apply()` instead of `fsm.Apply()` directly.)*
+**Files:**
+- Create: `store/raft_store.go`
+- Create: `store/raft_store_test.go`
+- Modify: `server/server.go`
+
+- [ ] **Step 1: Write tests for Raft LogStore/StableStore**
+
+```go
+// store/raft_store_test.go
+package store
+
+import (
+	"testing"
+	"os"
+	"github.com/hashicorp/raft"
+)
+
+func TestBadgerRaftStore(t *testing.T) {
+	dbPath, _ := os.MkdirTemp("", "badis-raft-store-*")
+	defer os.RemoveAll(dbPath)
+	fsm, _ := NewFSM(dbPath)
+	
+	// Test LogStore
+	log := &raft.Log{Index: 1, Term: 1, Data: []byte("test")}
+	if err := fsm.StoreLog(log); err != nil { t.Fatal(err) }
+	
+	var out raft.Log
+	if err := fsm.GetLog(1, &out); err != nil { t.Fatal(err) }
+	if string(out.Data) != "test" { t.Fatal("log mismatch") }
+}
+```
+
+- [ ] **Step 2: Implement LogStore/StableStore interfaces on FSM**
+
+```go
+// store/raft_store.go
+package store
+
+import (
+	"encoding/binary"
+	"github.com/dgraph-io/badger/v4"
+	"github.com/hashicorp/raft"
+)
+
+// Implement raft.LogStore and raft.StableStore on FSM
+// Use prefixes to separate FSM data (e.g. 'D') from Raft logs (e.g. 'L') and Stable store (e.g. 'S')
+
+func (f *FSM) StoreLog(log *raft.Log) error {
+    // encode log to bytes, write to Badger with 'L' + index prefix
+    return nil // placeholder
+}
+
+func (f *FSM) GetLog(index uint64, log *raft.Log) error {
+    return nil // placeholder
+}
+// ... implement remaining methods (FirstIndex, LastIndex, DeleteRange, Set, Get, SetUint64, GetUint64)
+```
+
+- [ ] **Step 3: Update Server to use Raft node**
+
+*(Modify Server to initialize raft.NewRaft using FSM as FSM, LogStore, and StableStore. Route SET commands to raft.Apply().)*
