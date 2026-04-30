@@ -10,14 +10,23 @@ import (
 	"github.com/winterman/badis/store"
 )
 
+func getEnvOrDefault(key, fallback string) string {
+	if value, exists := os.LookupEnv(key); exists {
+		return value
+	}
+	return fallback
+}
+
 func main() {
-	dbPath := "badis-data"
+	dbPath := getEnvOrDefault("BADIS_DATA_DIR", "badis-data")
+	port := getEnvOrDefault("BADIS_PORT", ":6379")
+
 	fsm, err := store.NewFSM(dbPath)
 	if err != nil {
 		log.Fatalf("Failed to initialize FSM: %v", err)
 	}
 
-	srv := server.NewServer(":6379", fsm)
+	srv := server.NewServer(port, fsm)
 
 	go func() {
 		if err := srv.Start(); err != nil {
