@@ -73,7 +73,7 @@ func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
 }
 
 func (f *FSM) Restore(rc io.ReadCloser) error {
-	defer rc.Close()
+	defer func() { _ = rc.Close() }()
 	return f.db.Load(rc, 10)
 }
 
@@ -84,7 +84,7 @@ type fsmSnapshot struct {
 func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
 	_, err := s.db.Backup(sink, 0)
 	if err != nil {
-		sink.Cancel()
+		_ = sink.Cancel()
 		return err
 	}
 	return sink.Close()

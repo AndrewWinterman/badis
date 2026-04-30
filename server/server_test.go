@@ -16,7 +16,7 @@ func getFreePort(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("failed to get free port: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	return ln.Addr().String()
 }
 
@@ -25,7 +25,7 @@ func TestBasicServer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dbPath)
+	defer func() { _ = os.RemoveAll(dbPath) }()
 
 	fsm, err := store.NewFSM(dbPath)
 	if err != nil {
@@ -59,7 +59,7 @@ func TestSetGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dbPath)
+	defer func() { _ = os.RemoveAll(dbPath) }()
 
 	fsm, err := store.NewFSM(dbPath)
 	if err != nil {

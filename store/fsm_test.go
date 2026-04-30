@@ -14,13 +14,13 @@ func TestFSM_Apply(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dbPath)
+	defer func() { _ = os.RemoveAll(dbPath) }()
 
 	fsm, err := NewFSM(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer fsm.Close()
+	defer func() { _ = fsm.Close() }()
 
 	// Propose SET
 	cmd := Command{Op: "SET", Key: "foo", Args: [][]byte{[]byte("bar")}}
