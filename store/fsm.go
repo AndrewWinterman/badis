@@ -2,6 +2,7 @@ package store
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 
 	"github.com/dgraph-io/badger/v4"
@@ -54,19 +55,39 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 	return f.db.Update(func(txn *badger.Txn) error {
 		switch cmd.Op {
 		case "SET":
+			if len(cmd.Args) == 0 {
+				return fmt.Errorf("SET missing args")
+			}
 			return txn.Set([]byte(cmd.Key), cmd.Args[0])
 		case "DEL":
 			return txn.Delete([]byte(cmd.Key))
+		default:
+			return fmt.Errorf("unknown op: %s", cmd.Op)
 		}
-		return nil
 	})
 }
 
 // Required Raft FSM methods
-func (f *FSM) Snapshot() (raft.FSMSnapshot, error) { return &fsmSnapshot{}, nil }
-func (f *FSM) Restore(io.ReadCloser) error { return nil }
+func (f *FSM) Snapshot() (raft.FSMSnapshot, error) {
+	return &fsmSnapshot{db: f.db}, nil
+}
 
-type fsmSnapshot struct{}
+func (f *FSM) Restore(rc io.ReadCloser) error {
+	defer rc.Close()
+	return f.db.Load(rc, 10)
+}
 
-func (s *fsmSnapshot) Persist(raft.SnapshotSink) error { return nil }
-func (s *fsmSnapshot) Release()                        {}
+type fsmSnapshot struct {
+	db *badger.DB
+}
+
+func (s *fsmSnapshot) Persist(sink raft.SnapshotSink) error {
+	_, err := s.db.Backup(sink, 0)
+	if err != nil {
+		sink.Cancel()
+		return err
+	}
+	return sink.Close()
+}
+
+func (s *fsmSnapshot) Release() {}
