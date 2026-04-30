@@ -1,12 +1,12 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/hashicorp/raft"
+	"github.com/hashicorp/go-msgpack/v2/codec"
 )
 
 type Command struct {
@@ -30,7 +30,7 @@ func NewFSM(path string) (*FSM, error) {
 
 func (f *FSM) Close() error { return f.db.Close() }
 
-func (f *FSM) Get(key string) ([]byte, error) {
+func (f *FSM) GetString(key string) ([]byte, error) {
 	var val []byte
 	err := f.db.View(func(txn *badger.Txn) error {
 		item, err := txn.Get([]byte(key))
@@ -48,7 +48,8 @@ func (f *FSM) Get(key string) ([]byte, error) {
 
 func (f *FSM) Apply(log *raft.Log) interface{} {
 	var cmd Command
-	if err := json.Unmarshal(log.Data, &cmd); err != nil {
+	dec := codec.NewDecoderBytes(log.Data, &codec.MsgpackHandle{})
+	if err := dec.Decode(&cmd); err != nil {
 		return err
 	}
 

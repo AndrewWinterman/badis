@@ -1,9 +1,11 @@
 package server
 
 import (
-	"encoding/json"
+	"bytes"
 	"log"
+	"time"
 
+	"github.com/hashicorp/go-msgpack/v2/codec"
 	"github.com/hashicorp/raft"
 	"github.com/tidwall/redcon"
 	"github.com/winterman/badis/store"
@@ -14,6 +16,7 @@ type Server struct {
 	mux          *redcon.ServeMux
 	redconServer *redcon.Server
 	fsm          *store.FSM
+	raft         *raft.Raft
 }
 
 func NewServer(addr string, fsm *store.FSM) *Server {
@@ -28,15 +31,49 @@ func NewServer(addr string, fsm *store.FSM) *Server {
 	return s
 }
 
+func (s *Server) SetupRaft(localID string, transport raft.Transport, snapshotStore raft.SnapshotStore) error {
+	config := raft.DefaultConfig()
+	config.LocalID = raft.ServerID(localID)
+
+	r, err := raft.NewRaft(config, s.fsm, s.fsm, s.fsm, snapshotStore, transport)
+	if err != nil {
+		return err
+	}
+	s.raft = r
+	return nil
+}
+
 func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
 	if len(cmd.Args) != 3 {
 		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
 		return
 	}
-	// Bypass raft for now, simulate apply
-	c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
-	data, _ := json.Marshal(c)
-	s.fsm.Apply(&raft.Log{Data: data})
+	
+	if s.raft != nil {
+		c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
+		var buf bytes.Buffer
+		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
+		_ = enc.Encode(c)
+		future := s.raft.Apply(buf.Bytes(), 5*time.Second)
+		if err := future.Error(); err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
+		
+		res := future.Response()
+		if err, ok := res.(error); ok && err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
+	} else {
+		// Fallback for tests if raft not setup
+		c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
+		var buf bytes.Buffer
+		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
+		_ = enc.Encode(c)
+		s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
+	}
+	
 	conn.WriteString("OK")
 }
 
@@ -45,7 +82,7 @@ func (s *Server) handleGet(conn redcon.Conn, cmd redcon.Command) {
 		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
 		return
 	}
-	val, err := s.fsm.Get(string(cmd.Args[1]))
+	val, err := s.fsm.GetString(string(cmd.Args[1]))
 	if err != nil {
 		conn.WriteError(err.Error())
 		return
