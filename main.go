@@ -7,11 +7,18 @@ import (
 	"syscall"
 
 	"github.com/winterman/badis/server"
+	"github.com/winterman/badis/store"
 )
 
 func main() {
-	srv := server.NewServer(":6379")
-	
+	dbPath := "badis-data"
+	fsm, err := store.NewFSM(dbPath)
+	if err != nil {
+		log.Fatalf("Failed to initialize FSM: %v", err)
+	}
+
+	srv := server.NewServer(":6379", fsm)
+
 	go func() {
 		if err := srv.Start(); err != nil {
 			log.Fatalf("Server failed: %v", err)
