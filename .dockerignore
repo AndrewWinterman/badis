@@ -1,0 +1,4 @@
+# .dockerignore
+.git
+.worktrees
+badis-data
