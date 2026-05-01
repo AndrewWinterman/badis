@@ -3,7 +3,15 @@ set -e
 
 # Default vars
 LOAD_KIND=false
-ARCH="linux/amd64"
+
+HOST_ARCH=$(uname -m)
+if [ "$HOST_ARCH" = "arm64" ] || [ "$HOST_ARCH" = "aarch64" ]; then
+    DEFAULT_ARCH="linux/arm64"
+else
+    DEFAULT_ARCH="linux/amd64"
+fi
+
+ARCH="$DEFAULT_ARCH"
 IMAGE="winterman/badis:latest"
 KUBE_CONTEXT=""
 
@@ -22,7 +30,7 @@ Usage: $(basename "$0") [OPTIONS]
 Options:
     -h, --help                 Show this help message
     --kind                     Load image into Kind cluster
-    --arch ARCH                Target architecture (default: linux/amd64)
+    --arch ARCH                Target architecture (default: $DEFAULT_ARCH)
     --context CONTEXT          Kubernetes context to use
     --namespace NS             Kubernetes namespace (default: default)
     --replicas N               Number of storage replicas (default: 3)
@@ -56,7 +64,7 @@ docker build --platform "$ARCH" -t "$IMAGE" .
 
 if [ "$LOAD_KIND" = true ]; then
     echo "📦 Loading image into Kind cluster..."
-    go run sigs.k8s.io/kind@latest load docker-image "$IMAGE"
+    go run sigs.k8s.io/kind@latest load docker-image -n "$KUBE_CONTEXT" "$IMAGE"
 fi
 
 echo "🚀 Deploying to Kubernetes..."
