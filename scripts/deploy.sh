@@ -7,13 +7,46 @@ ARCH="linux/amd64"
 IMAGE="winterman/badis:latest"
 KUBE_CONTEXT=""
 
+# TLA defaults
+NAMESPACE="default"
+REPLICAS=3
+PROXY_REPLICAS=2
+VOLUME_SIZE="5Gi"
+STORAGE_CLASS=""
+RUN_TESTS="true"
+
+show_help() {
+    cat << EOF
+Usage: $(basename "$0") [OPTIONS]
+
+Options:
+    -h, --help                 Show this help message
+    --kind                     Load image into Kind cluster
+    --arch ARCH                Target architecture (default: linux/amd64)
+    --context CONTEXT          Kubernetes context to use
+    --namespace NS             Kubernetes namespace (default: default)
+    --replicas N               Number of storage replicas (default: 3)
+    --proxy-replicas N         Number of proxy replicas (default: 2)
+    --volume-size SIZE         PVC storage size (default: 5Gi)
+    --storage-class CLASS      Storage class name (default: null/cluster default)
+    --no-tests                 Do not run E2E tests during deployment
+EOF
+}
+
 # Parse args
 while [[ "$#" -gt 0 ]]; do
     case $1 in
+        -h|--help) show_help; exit 0 ;;
         --kind) LOAD_KIND=true ;;
         --arch) ARCH="$2"; shift ;;
         --context) KUBE_CONTEXT="$2"; shift ;;
-        *) echo "Unknown parameter passed: $1"; exit 1 ;;
+        --namespace) NAMESPACE="$2"; shift ;;
+        --replicas) REPLICAS="$2"; shift ;;
+        --proxy-replicas) PROXY_REPLICAS="$2"; shift ;;
+        --volume-size) VOLUME_SIZE="$2"; shift ;;
+        --storage-class) STORAGE_CLASS="$2"; shift ;;
+        --no-tests) RUN_TESTS="false" ;;
+        *) echo "Unknown parameter passed: $1"; show_help; exit 1 ;;
     esac
     shift
 done
@@ -26,8 +59,13 @@ if [ "$LOAD_KIND" = true ]; then
     kind load docker-image "$IMAGE"
 fi
 
-echo "🚀 Deploying to Kubernetes (with E2E test pod)..."
-KUBECFG_ARGS="--tla-code runTests=true"
+echo "🚀 Deploying to Kubernetes..."
+KUBECFG_ARGS="--tla-str namespace=$NAMESPACE --tla-code replicas=$REPLICAS --tla-code proxyReplicas=$PROXY_REPLICAS --tla-str volumeSize=$VOLUME_SIZE --tla-code runTests=$RUN_TESTS"
+
+if [ -n "$STORAGE_CLASS" ]; then
+    KUBECFG_ARGS="$KUBECFG_ARGS --tla-str storageClass=$STORAGE_CLASS"
+fi
+
 if [ -n "$KUBE_CONTEXT" ]; then
     echo "Using Kubernetes context: $KUBE_CONTEXT"
     KUBECFG_ARGS="--context $KUBE_CONTEXT $KUBECFG_ARGS"
