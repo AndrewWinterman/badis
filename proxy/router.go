@@ -34,7 +34,7 @@ func NewRouter(shardAddrs []string) *Router {
 		Load:              defaultLoad,
 		Hasher:            hasher{},
 	}
-	
+
 	ring := consistent.New(nil, cfg)
 	for _, addr := range shardAddrs {
 		ring.Add(shard(addr))
