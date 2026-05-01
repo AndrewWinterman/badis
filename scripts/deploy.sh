@@ -64,7 +64,18 @@ docker build --platform "$ARCH" -t "$IMAGE" .
 
 if [ "$LOAD_KIND" = true ]; then
     echo "📦 Loading image into Kind cluster..."
-    go run sigs.k8s.io/kind@latest load docker-image -n "$KUBE_CONTEXT" "$IMAGE"
+    KIND_ARGS=""
+    if [ -n "$KUBE_CONTEXT" ]; then
+        # If context starts with kind-, strip it to get the cluster name
+        if [[ "$KUBE_CONTEXT" == kind-* ]]; then
+            CLUSTER_NAME="${KUBE_CONTEXT#kind-}"
+            KIND_ARGS="-n $CLUSTER_NAME"
+        else
+            # Best effort if they passed something else
+            KIND_ARGS="-n $KUBE_CONTEXT"
+        fi
+    fi
+    go run sigs.k8s.io/kind@latest load docker-image $KIND_ARGS "$IMAGE"
 fi
 
 echo "🚀 Deploying to Kubernetes..."
