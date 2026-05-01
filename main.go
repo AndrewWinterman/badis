@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -30,16 +31,25 @@ func main() {
 		port = ":" + port
 	}
 
-	isProxy := getEnvOrDefault("BADIS_PROXY_MODE", "false")
+	isProxyStr := getEnvOrDefault("BADIS_PROXY_MODE", "false")
+	isProxy, _ := strconv.ParseBool(isProxyStr)
 
 	var srv StartStopper
 
-	if isProxy == "true" {
+	if isProxy {
 		shardsStr := getEnvOrDefault("BADIS_SHARDS", "")
 		if shardsStr == "" {
 			log.Fatal("BADIS_SHARDS must be set in proxy mode")
 		}
-		shards := strings.Split(shardsStr, ",")
+		var shards []string
+		for _, s := range strings.Split(shardsStr, ",") {
+			if s != "" {
+				shards = append(shards, s)
+			}
+		}
+		if len(shards) == 0 {
+			log.Fatal("BADIS_SHARDS must contain at least one valid shard")
+		}
 		router := proxy.NewRouter(shards)
 		srv = proxy.NewServer(port, router)
 	} else {
@@ -64,7 +74,7 @@ func main() {
 
 	select {
 	case err := <-errChan:
-		log.Fatalf("Server failed: %v", err)
+		log.Printf("Server failed: %v", err)
 	case <-quit:
 		log.Println("Shutting down...")
 	}
