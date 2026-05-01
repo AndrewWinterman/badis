@@ -59,6 +59,13 @@ while [[ "$#" -gt 0 ]]; do
     shift
 done
 
+if [ -z "$KUBE_CONTEXT" ]; then
+    echo "❌ Error: --context is required to prevent accidental deployments to the wrong cluster."
+    echo ""
+    show_help
+    exit 1
+fi
+
 echo "🔨 Building $IMAGE for $ARCH..."
 docker build --platform "$ARCH" -t "$IMAGE" .
 
