@@ -6,9 +6,11 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o badis .
+ARG TARGETOS
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -ldflags="-w -s" -o badis .
 # Compile the test binary
-RUN CGO_ENABLED=0 GOOS=linux go test -c -o badis-e2e ./test/e2e
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go test -c -o badis-e2e ./test/e2e
 
 FROM alpine:latest
 RUN apk --no-cache add ca-certificates
