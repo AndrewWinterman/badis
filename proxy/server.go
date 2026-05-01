@@ -2,8 +2,10 @@ package proxy
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -15,6 +17,7 @@ type Server struct {
 	router  *Router
 	server  *redcon.Server
 	clients map[string]*redis.Client
+	mu      sync.RWMutex
 }
 
 func NewServer(addr string, router *Router) *Server {
@@ -36,9 +39,20 @@ func (s *Server) Addr() string {
 }
 
 func (s *Server) getClient(addr string) *redis.Client {
+	s.mu.RLock()
+	if client, ok := s.clients[addr]; ok {
+		s.mu.RUnlock()
+		return client
+	}
+	s.mu.RUnlock()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Double check
 	if client, ok := s.clients[addr]; ok {
 		return client
 	}
+
 	client := redis.NewClient(&redis.Options{Addr: addr, Protocol: 2})
 	s.clients[addr] = client
 	return client
@@ -51,7 +65,11 @@ func (s *Server) handleCmd(conn redcon.Conn, cmd redcon.Command) {
 		return
 	}
 	if len(cmd.Args) < 2 {
-		conn.WriteError("ERR wrong number of arguments")
+		if cmdName == "PING" {
+			conn.WriteString("PONG")
+		} else {
+			conn.WriteError("ERR wrong number of arguments for '" + strings.ToLower(cmdName) + "' command")
+		}
 		return
 	}
 
@@ -97,6 +115,22 @@ func (s *Server) handleCmd(conn redcon.Conn, cmd redcon.Command) {
 		conn.WriteBulk(v)
 	case int64:
 		conn.WriteInt64(v)
+	case []interface{}:
+		conn.WriteArray(len(v))
+		for _, item := range v {
+			switch iv := item.(type) {
+			case string:
+				conn.WriteBulkString(iv)
+			case []byte:
+				conn.WriteBulk(iv)
+			case int64:
+				conn.WriteInt64(iv)
+			case nil:
+				conn.WriteNull()
+			default:
+				conn.WriteBulkString(fmt.Sprintf("%v", iv))
+			}
+		}
 	default:
 		// Fallback for simple responses (like +OK)
 		conn.WriteString("OK")
@@ -109,9 +143,11 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Stop() {
+	s.mu.Lock()
 	for _, c := range s.clients {
 		c.Close()
 	}
+	s.mu.Unlock()
 	if s.server != nil {
 		s.server.Close()
 	}

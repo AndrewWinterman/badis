@@ -3,6 +3,8 @@ module github.com/winterman/badis
 go 1.25.7
 
 require (
+	github.com/buraksezer/consistent v0.10.0
+	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/hashicorp/go-msgpack/v2 v2.1.2
 	github.com/hashicorp/raft v1.7.3
@@ -12,8 +14,6 @@ require (
 
 require (
 	github.com/armon/go-metrics v0.4.1 // indirect
-	github.com/buraksezer/consistent v0.10.0 // indirect
-	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.13.0 // indirect
