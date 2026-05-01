@@ -48,7 +48,7 @@ func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
 		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
 		return
 	}
-	
+
 	if s.raft != nil {
 		c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
 		var buf bytes.Buffer
@@ -59,7 +59,7 @@ func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
 			conn.WriteError("ERR " + err.Error())
 			return
 		}
-		
+
 		res := future.Response()
 		if err, ok := res.(error); ok && err != nil {
 			conn.WriteError("ERR " + err.Error())
@@ -73,7 +73,7 @@ func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
 		_ = enc.Encode(c)
 		s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
 	}
-	
+
 	conn.WriteString("OK")
 }
 

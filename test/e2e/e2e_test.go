@@ -24,7 +24,7 @@ func TestBadisE2E(t *testing.T) {
 		Addr: addr,
 	})
 	defer client.Close()
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 	defer cancel()
 

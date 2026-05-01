@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/hashicorp/raft"
 	"github.com/hashicorp/go-msgpack/v2/codec"
+	"github.com/hashicorp/raft"
 )
 
 var (
@@ -51,7 +51,7 @@ func (f *FSM) FirstIndex() (uint64, error) {
 		opts.PrefetchValues = false
 		it := txn.NewIterator(opts)
 		defer it.Close()
-		
+
 		it.Seek(prefixLog)
 		if it.ValidForPrefix(prefixLog) {
 			k := it.Item().Key()

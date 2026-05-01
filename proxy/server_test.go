@@ -29,7 +29,7 @@ func TestProxyServer(t *testing.T) {
 			conn.WriteString("OK")
 		}
 	}, func(conn redcon.Conn) bool { return true }, nil)
-	
+
 	go backend.Serve(backendLn)
 	defer backend.Close()
 
@@ -43,7 +43,7 @@ func TestProxyServer(t *testing.T) {
 	// Start Proxy
 	router := NewRouter([]string{backendAddr})
 	proxy := NewServer(proxyAddr, router)
-	
+
 	// Start with the manual listener
 	go proxy.server.Serve(proxyLn)
 	defer proxy.Stop()

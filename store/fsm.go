@@ -5,8 +5,8 @@ import (
 	"io"
 
 	"github.com/dgraph-io/badger/v4"
-	"github.com/hashicorp/raft"
 	"github.com/hashicorp/go-msgpack/v2/codec"
+	"github.com/hashicorp/raft"
 )
 
 type Command struct {
