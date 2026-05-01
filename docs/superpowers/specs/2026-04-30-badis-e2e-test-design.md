@@ -4,9 +4,9 @@
 
 ## Architecture
 
-1.  **Test Suite (Go):** A standalone Go application (`test/e2e/main.go`) that connects to a given Redis address (e.g., `badis:6379`) using `github.com/redis/go-redis/v9`. It will execute a suite of commands (`SET`, `GET`, `DEL`, Lists, Hashes, Sets) and panic or `log.Fatal` if any assertion fails.
-2.  **Docker Image:** We will modify the existing `Dockerfile` to build two binaries (`badis` and `badis-e2e`) using a multi-stage build, so we can use `winterman/badis:latest` but override the `CMD` for the test pod to `["./badis-e2e"]`. (Alternative: a separate `Dockerfile.e2e`).
-3.  **Kubernetes Resource:** We will add a new `runTests=false` TLA argument to `k8s/badis.jsonnet`. When `true`, it generates a `Pod` (or `Job`) named `badis-e2e-test` that runs the `badis-e2e` binary.
+1.  **Test Suite (Go):** Standard Go tests (`test/e2e/e2e_test.go`) that connect to a given Redis address (e.g., `badis:6379`) using `github.com/redis/go-redis/v9`. We use the `testing` package for standard assertions, subtests (`t.Run`), and reporting.
+2.  **Docker Image:** We will modify the existing `Dockerfile` to compile the test binary in the builder stage (`go test -c -o badis-e2e ./test/e2e`) and copy it to the final Alpine image. The test Pod will override the `CMD` to run `["./badis-e2e", "-test.v"]`.
+3.  **Kubernetes Resource:** We will add a new `runTests=false` TLA argument to `k8s/badis.jsonnet`. When `true`, it generates a `Pod` named `badis-e2e-test` that runs the `badis-e2e` binary.
 
 ## Data Flow
 
