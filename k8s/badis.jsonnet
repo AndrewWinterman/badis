@@ -5,10 +5,12 @@ function(
   proxyReplicas=2,
   image='winterman/badis:latest',
   volumeSize='5Gi',
-  storageClass=null
+  storageClass=null,
+  runTests=false
 )
 local name = 'badis';
 local proxyName = 'badis-proxy';
+local testName = 'badis-e2e-test';
 
 local selector = { app: name };
 local proxySelector = { app: proxyName };
@@ -16,7 +18,7 @@ local proxySelector = { app: proxyName };
 // Helper to generate shard connection strings
 local shards = std.join(',', [name + '-' + i + '.' + name + '-headless:6379' for i in std.range(0, replicas - 1)]);
 
-[
+local baseResources = [
   // 1. Headless Service for Shards
   {
     apiVersion: 'v1',
@@ -134,4 +136,31 @@ local shards = std.join(',', [name + '-' + i + '.' + name + '-headless:6379' for
       },
     },
   },
-]
+];
+
+local testPod = [
+  {
+    apiVersion: 'v1',
+    kind: 'Pod',
+    metadata: {
+      name: testName,
+      namespace: namespace,
+    },
+    spec: {
+      restartPolicy: 'Never',
+      containers: [
+        {
+          name: 'e2e',
+          image: image,
+          imagePullPolicy: 'IfNotPresent',
+          command: ['./badis-e2e', '-test.v'],
+          env: [
+            { name: 'BADIS_ADDR', value: name + ':6379' },
+          ],
+        },
+      ],
+    },
+  }
+];
+
+baseResources + (if runTests then testPod else [])
