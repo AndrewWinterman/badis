@@ -18,6 +18,16 @@ local proxySelector = { app: proxyName };
 // Helper to generate shard connection strings
 local shards = std.join(',', [name + '-' + i + '.' + name + '-headless:6379' for i in std.range(0, replicas - 1)]);
 
+local nsResource = if namespace != 'default' then [
+  {
+    apiVersion: 'v1',
+    kind: 'Namespace',
+    metadata: {
+      name: namespace,
+    },
+  }
+] else [];
+
 local baseResources = [
   // 1. Headless Service for Shards
   {
@@ -164,4 +174,4 @@ local testPod = [
   }
 ];
 
-baseResources + (if runTests then testPod else [])
+nsResource + baseResources + (if runTests then testPod else [])
