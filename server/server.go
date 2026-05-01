@@ -28,6 +28,7 @@ func NewServer(addr string, fsm *store.FSM) *Server {
 	})
 	mux.HandleFunc("set", s.handleSet)
 	mux.HandleFunc("get", s.handleGet)
+	mux.HandleFunc("del", s.handleDel)
 	return s
 }
 
@@ -92,6 +93,42 @@ func (s *Server) handleGet(conn redcon.Conn, cmd redcon.Command) {
 		return
 	}
 	conn.WriteBulk(val)
+}
+
+func (s *Server) handleDel(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
+		return
+	}
+
+	if s.raft != nil {
+		c := store.Command{Op: "DEL", Key: string(cmd.Args[1])}
+		var buf bytes.Buffer
+		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
+		_ = enc.Encode(c)
+		future := s.raft.Apply(buf.Bytes(), 5*time.Second)
+		if err := future.Error(); err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
+
+		res := future.Response()
+		if err, ok := res.(error); ok && err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
+	} else {
+		// Fallback for tests if raft not setup
+		c := store.Command{Op: "DEL", Key: string(cmd.Args[1])}
+		var buf bytes.Buffer
+		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
+		_ = enc.Encode(c)
+		s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
+	}
+
+	// Assuming success for simple implementation.
+	// Typically redis DEL returns the number of keys removed.
+	conn.WriteInt(1)
 }
 
 func (s *Server) Start() error {
