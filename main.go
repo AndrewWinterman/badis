@@ -7,6 +7,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/winterman/badis/proxy"
 	"github.com/winterman/badis/server"
 	"github.com/winterman/badis/store"
 )
@@ -18,20 +19,38 @@ func getEnvOrDefault(key, fallback string) string {
 	return fallback
 }
 
+type StartStopper interface {
+	Start() error
+	Stop()
+}
+
 func main() {
-	dbPath := getEnvOrDefault("BADIS_DATA_DIR", "badis-data")
 	port := getEnvOrDefault("BADIS_PORT", ":6379")
 	if !strings.HasPrefix(port, ":") {
 		port = ":" + port
 	}
 
-	fsm, err := store.NewFSM(dbPath)
-	if err != nil {
-		log.Fatalf("Failed to initialize FSM: %v", err)
-	}
-	defer fsm.Close()
+	isProxy := getEnvOrDefault("BADIS_PROXY_MODE", "false")
 
-	srv := server.NewServer(port, fsm)
+	var srv StartStopper
+
+	if isProxy == "true" {
+		shardsStr := getEnvOrDefault("BADIS_SHARDS", "")
+		if shardsStr == "" {
+			log.Fatal("BADIS_SHARDS must be set in proxy mode")
+		}
+		shards := strings.Split(shardsStr, ",")
+		router := proxy.NewRouter(shards)
+		srv = proxy.NewServer(port, router)
+	} else {
+		dbPath := getEnvOrDefault("BADIS_DATA_DIR", "badis-data")
+		fsm, err := store.NewFSM(dbPath)
+		if err != nil {
+			log.Fatalf("Failed to initialize FSM: %v", err)
+		}
+		defer fsm.Close()
+		srv = server.NewServer(port, fsm)
+	}
 
 	errChan := make(chan error, 1)
 	go func() {
@@ -42,12 +61,12 @@ func main() {
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	select {
-	case <-quit:
-		log.Println("Shutting down server...")
 	case err := <-errChan:
-		log.Printf("Server failed: %v", err)
+		log.Fatalf("Server failed: %v", err)
+	case <-quit:
+		log.Println("Shutting down...")
 	}
 
 	srv.Stop()
