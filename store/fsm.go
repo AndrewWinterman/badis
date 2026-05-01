@@ -9,6 +9,15 @@ import (
 	"github.com/hashicorp/raft"
 )
 
+const prefixUser = byte('K')
+
+func userKey(key string) []byte {
+	k := make([]byte, len(key)+1)
+	k[0] = prefixUser
+	copy(k[1:], key)
+	return k
+}
+
 type Command struct {
 	Op   string
 	Key  string
@@ -33,7 +42,7 @@ func (f *FSM) Close() error { return f.db.Close() }
 func (f *FSM) GetString(key string) ([]byte, error) {
 	var val []byte
 	err := f.db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get([]byte(key))
+		item, err := txn.Get(userKey(key))
 		if err != nil {
 			return err
 		}
@@ -59,9 +68,9 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 			if len(cmd.Args) == 0 {
 				return fmt.Errorf("SET missing args")
 			}
-			return txn.Set([]byte(cmd.Key), cmd.Args[0])
+			return txn.Set(userKey(cmd.Key), cmd.Args[0])
 		case "DEL":
-			return txn.Delete([]byte(cmd.Key))
+			return txn.Delete(userKey(cmd.Key))
 		default:
 			return fmt.Errorf("unknown op: %s", cmd.Op)
 		}
