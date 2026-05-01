@@ -3,6 +3,8 @@ package server
 import (
 	"bytes"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/go-msgpack/v2/codec"
@@ -45,13 +47,86 @@ func (s *Server) SetupRaft(localID string, transport raft.Transport, snapshotSto
 }
 
 func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
-	if len(cmd.Args) != 3 {
+	if len(cmd.Args) < 3 {
 		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
 		return
 	}
 
+	c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
+
+	for i := 3; i < len(cmd.Args); i++ {
+		opt := strings.ToUpper(string(cmd.Args[i]))
+		switch opt {
+		case "NX":
+			c.Condition = "NX"
+		case "XX":
+			c.Condition = "XX"
+		case "GET":
+			c.ReturnOld = true
+		case "EX":
+			if i+1 >= len(cmd.Args) {
+				conn.WriteError("ERR syntax error")
+				return
+			}
+			secs, err := strconv.ParseInt(string(cmd.Args[i+1]), 10, 64)
+			if err != nil {
+				conn.WriteError("ERR value is not an integer or out of range")
+				return
+			}
+			c.TTLMs = secs * 1000
+			i++
+		case "PX":
+			if i+1 >= len(cmd.Args) {
+				conn.WriteError("ERR syntax error")
+				return
+			}
+			ms, err := strconv.ParseInt(string(cmd.Args[i+1]), 10, 64)
+			if err != nil {
+				conn.WriteError("ERR value is not an integer or out of range")
+				return
+			}
+			c.TTLMs = ms
+			i++
+		case "EXAT":
+			if i+1 >= len(cmd.Args) {
+				conn.WriteError("ERR syntax error")
+				return
+			}
+			timestamp, err := strconv.ParseInt(string(cmd.Args[i+1]), 10, 64)
+			if err != nil {
+				conn.WriteError("ERR value is not an integer or out of range")
+				return
+			}
+			ttl := (timestamp * 1000) - time.Now().UnixMilli()
+			if ttl < 0 {
+				ttl = 1
+			}
+			c.TTLMs = ttl
+			i++
+		case "PXAT":
+			if i+1 >= len(cmd.Args) {
+				conn.WriteError("ERR syntax error")
+				return
+			}
+			timestamp, err := strconv.ParseInt(string(cmd.Args[i+1]), 10, 64)
+			if err != nil {
+				conn.WriteError("ERR value is not an integer or out of range")
+				return
+			}
+			ttl := timestamp - time.Now().UnixMilli()
+			if ttl < 0 {
+				ttl = 1
+			}
+			c.TTLMs = ttl
+			i++
+		default:
+			conn.WriteError("ERR syntax error")
+			return
+		}
+	}
+
+	var res interface{}
 	if s.raft != nil {
-		c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
 		var buf bytes.Buffer
 		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
 		_ = enc.Encode(c)
@@ -60,19 +135,35 @@ func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
 			conn.WriteError("ERR " + err.Error())
 			return
 		}
-
-		res := future.Response()
+		res = future.Response()
 		if err, ok := res.(error); ok && err != nil {
 			conn.WriteError("ERR " + err.Error())
 			return
 		}
 	} else {
 		// Fallback for tests if raft not setup
-		c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
 		var buf bytes.Buffer
 		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
 		_ = enc.Encode(c)
-		s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
+		res = s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
+		if err, ok := res.(error); ok && err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
+	}
+
+	if res == nil {
+		conn.WriteNull()
+		return
+	}
+
+	if c.ReturnOld {
+		if b, ok := res.([]byte); ok {
+			conn.WriteBulk(b)
+		} else {
+			conn.WriteNull()
+		}
+		return
 	}
 
 	conn.WriteString("OK")
@@ -101,6 +192,7 @@ func (s *Server) handleDel(conn redcon.Conn, cmd redcon.Command) {
 		return
 	}
 
+	var res interface{}
 	if s.raft != nil {
 		c := store.Command{Op: "DEL", Key: string(cmd.Args[1])}
 		var buf bytes.Buffer
@@ -112,7 +204,7 @@ func (s *Server) handleDel(conn redcon.Conn, cmd redcon.Command) {
 			return
 		}
 
-		res := future.Response()
+		res = future.Response()
 		if err, ok := res.(error); ok && err != nil {
 			conn.WriteError("ERR " + err.Error())
 			return
@@ -123,12 +215,18 @@ func (s *Server) handleDel(conn redcon.Conn, cmd redcon.Command) {
 		var buf bytes.Buffer
 		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
 		_ = enc.Encode(c)
-		s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
+		res = s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
+		if err, ok := res.(error); ok && err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
 	}
 
-	// Assuming success for simple implementation.
-	// Typically redis DEL returns the number of keys removed.
-	conn.WriteInt(1)
+	if count, ok := res.(int); ok {
+		conn.WriteInt(count)
+	} else {
+		conn.WriteInt(1)
+	}
 }
 
 func (s *Server) Start() error {

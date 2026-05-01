@@ -60,6 +60,58 @@ func TestBadisE2E(t *testing.T) {
 		}
 	})
 
+	t.Run("SET Modifiers", func(t *testing.T) {
+		// Clean up keys at the end
+		t.Cleanup(func() {
+			client.Del(context.Background(), "e2e:key_nx", "e2e:key_xx", "e2e:key_get", "e2e:key_ex")
+		})
+
+		// --- NX ---
+		ok, err := client.SetNX(ctx, "e2e:key_nx", "val_nx", 0).Result()
+		if err != nil || !ok {
+			t.Fatalf("SetNX on new key failed: %v", err)
+		}
+		
+		// Attempting to overwrite with NX should fail
+		ok, err = client.SetNX(ctx, "e2e:key_nx", "val_nx_2", 0).Result()
+		if err != nil || ok {
+			t.Fatalf("SetNX on existing key should return false, ok=%v err=%v", ok, err)
+		}
+
+		// --- XX ---
+		ok, err = client.SetXX(ctx, "e2e:key_xx", "val_xx", 0).Result()
+		if err != nil || ok {
+			t.Fatalf("SetXX on non-existent key should return false, ok=%v err=%v", ok, err)
+		}
+
+		client.Set(ctx, "e2e:key_xx", "val_initial", 0)
+		ok, err = client.SetXX(ctx, "e2e:key_xx", "val_xx", 0).Result()
+		if err != nil || !ok {
+			t.Fatalf("SetXX on existing key failed: %v", err)
+		}
+		
+		// --- GET ---
+		// Set existing value
+		client.Set(ctx, "e2e:key_get", "val1", 0)
+		// Set and get the old value
+		oldVal, err := client.Do(ctx, "SET", "e2e:key_get", "val2", "GET").Result()
+		if err != nil || oldVal != "val1" {
+			t.Fatalf("SET GET returned incorrect old value: got %v, err: %v", oldVal, err)
+		}
+
+		// --- EX ---
+		err = client.SetEx(ctx, "e2e:key_ex", "val_ex", 1*time.Second).Err()
+		if err != nil {
+			t.Fatalf("SetEx failed: %v", err)
+		}
+		// Let it expire
+		time.Sleep(1500 * time.Millisecond)
+		_, err = client.Get(ctx, "e2e:key_ex").Result()
+		if err != redis.Nil {
+			t.Fatalf("Expected key to expire, got err: %v", err)
+		}
+	})
+
 	t.Run("DEL", func(t *testing.T) {
 		err := client.Set(ctx, "e2e:key2", "val2", 0).Err()
 		if err != nil {
