@@ -67,27 +67,27 @@ func TestBadisE2E(t *testing.T) {
 		})
 
 		// --- NX ---
-		ok, err := client.SetNX(ctx, "e2e:key_nx", "val_nx", 0).Result()
-		if err != nil || !ok {
-			t.Fatalf("SetNX on new key failed: %v", err)
+		ok, err := client.Do(ctx, "SET", "e2e:key_nx", "val_nx", "NX").Result()
+		if err != nil || ok != "OK" {
+			t.Fatalf("SET NX on new key failed: err=%v, res=%v", err, ok)
 		}
 		
 		// Attempting to overwrite with NX should fail
-		ok, err = client.SetNX(ctx, "e2e:key_nx", "val_nx_2", 0).Result()
-		if err != nil || ok {
-			t.Fatalf("SetNX on existing key should return false, ok=%v err=%v", ok, err)
+		_, err = client.Do(ctx, "SET", "e2e:key_nx", "val_nx_2", "NX").Result()
+		if err != redis.Nil {
+			t.Fatalf("SET NX on existing key should return redis.Nil, err=%v", err)
 		}
 
 		// --- XX ---
-		ok, err = client.SetXX(ctx, "e2e:key_xx", "val_xx", 0).Result()
-		if err != nil || ok {
-			t.Fatalf("SetXX on non-existent key should return false, ok=%v err=%v", ok, err)
+		_, err = client.Do(ctx, "SET", "e2e:key_xx", "val_xx", "XX").Result()
+		if err != redis.Nil {
+			t.Fatalf("SET XX on non-existent key should return redis.Nil, err=%v", err)
 		}
 
 		client.Set(ctx, "e2e:key_xx", "val_initial", 0)
-		ok, err = client.SetXX(ctx, "e2e:key_xx", "val_xx", 0).Result()
-		if err != nil || !ok {
-			t.Fatalf("SetXX on existing key failed: %v", err)
+		ok, err = client.Do(ctx, "SET", "e2e:key_xx", "val_xx", "XX").Result()
+		if err != nil || ok != "OK" {
+			t.Fatalf("SET XX on existing key failed: err=%v, res=%v", err, ok)
 		}
 		
 		// --- GET ---

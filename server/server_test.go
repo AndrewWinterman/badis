@@ -99,3 +99,51 @@ func TestSetGet(t *testing.T) {
 		t.Fatalf("Expected v1, got %v", val)
 	}
 }
+
+func TestSetModifiers(t *testing.T) {
+	dir, err := os.MkdirTemp("", "badis-server-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+
+	fsm, err := store.NewFSM(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fsm.Close()
+
+	srv := NewServer("127.0.0.1:0", fsm)
+	go srv.Start()
+	defer srv.Stop()
+
+	time.Sleep(100 * time.Millisecond)
+
+	addr := srv.redconServer.Addr().String()
+	rdb := redis.NewClient(&redis.Options{Addr: addr})
+	defer rdb.Close()
+	ctx := context.Background()
+
+	// Wait for start
+	for i := 0; i < 50; i++ {
+		if rdb.Ping(ctx).Err() == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// SETNX
+	res, err := rdb.Do(ctx, "SET", "nxkey", "1", "NX").Result()
+	if err != nil {
+		t.Fatalf("SET NX error: %v", err)
+	}
+	if res != "OK" {
+		t.Fatalf("SET NX expected OK, got %v", res)
+	}
+
+	// SETNX again - should return nil
+	res, err = rdb.Do(ctx, "SET", "nxkey", "2", "NX").Result()
+	if err != redis.Nil {
+		t.Fatalf("SET NX on existing key expected redis.Nil, got err=%v, res=%v", err, res)
+	}
+}
