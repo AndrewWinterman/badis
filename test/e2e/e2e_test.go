@@ -100,15 +100,15 @@ func TestBadisE2E(t *testing.T) {
 		}
 
 		// --- EX ---
-		err = client.SetEx(ctx, "e2e:key_ex", "val_ex", 1*time.Second).Err()
+		err = client.Do(ctx, "SET", "e2e:key_ex", "val_ex", "EX", 1).Err()
 		if err != nil {
-			t.Fatalf("SetEx failed: %v", err)
+			t.Fatalf("SET EX failed: %v", err)
 		}
 		// Let it expire
 		time.Sleep(1500 * time.Millisecond)
 		_, err = client.Get(ctx, "e2e:key_ex").Result()
 		if err != redis.Nil {
-			t.Fatalf("Expected key to expire, got err: %v", err)
+			t.Fatalf("Expected key to expire (redis.Nil), got err: %v", err)
 		}
 	})
 
