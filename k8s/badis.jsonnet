@@ -1,10 +1,14 @@
 // k8s/badis.jsonnet
+function(
+  namespace='default',
+  replicas=3,
+  proxyReplicas=2,
+  image='winterman/badis:latest',
+  volumeSize='5Gi',
+  storageClass=null
+)
 local name = 'badis';
 local proxyName = 'badis-proxy';
-local namespace = 'default';
-local replicas = 3;
-local proxyReplicas = 2;
-local image = 'winterman/badis:latest';
 
 local selector = { app: name };
 local proxySelector = { app: proxyName };
@@ -90,8 +94,8 @@ local shards = std.join(',', [name + '-' + i + '.' + name + '-headless:6379' for
           metadata: { name: 'data' },
           spec: {
             accessModes: ['ReadWriteOnce'],
-            resources: { requests: { storage: '5Gi' } },
-          },
+            resources: { requests: { storage: volumeSize } },
+          } + (if storageClass != null then { storageClassName: storageClass } else {}),
         },
       ],
     },
