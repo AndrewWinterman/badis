@@ -156,6 +156,7 @@ local testPod = [
           command: ['./badis-e2e', '-test.v'],
           env: [
             { name: 'BADIS_ADDR', value: name + ':6379' },
+            { name: 'RUN_E2E', value: '1' },
           ],
         },
       ],

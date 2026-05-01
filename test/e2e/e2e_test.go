@@ -11,6 +11,10 @@ import (
 )
 
 func TestBadisE2E(t *testing.T) {
+	if os.Getenv("RUN_E2E") == "" {
+		t.Skip("Skipping E2E tests...")
+	}
+
 	addr := os.Getenv("BADIS_ADDR")
 	if addr == "" {
 		addr = "localhost:6379"
