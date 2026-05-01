@@ -56,7 +56,7 @@ docker build --platform "$ARCH" -t "$IMAGE" .
 
 if [ "$LOAD_KIND" = true ]; then
     echo "📦 Loading image into Kind cluster..."
-    kind load docker-image "$IMAGE"
+    go run sigs.k8s.io/kind@latest load docker-image "$IMAGE"
 fi
 
 echo "🚀 Deploying to Kubernetes..."
