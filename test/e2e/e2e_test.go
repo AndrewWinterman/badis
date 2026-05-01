@@ -62,10 +62,15 @@ func TestBadisE2E(t *testing.T) {
 
 	t.Run("SET Modifiers", func(t *testing.T) {
 		// Clean up keys before starting
-		client.Del(context.Background(), "e2e:key_nx", "e2e:key_xx", "e2e:key_get", "e2e:key_ex")
+		keys := []string{"e2e:key_nx", "e2e:key_xx", "e2e:key_get", "e2e:key_ex"}
+		for _, k := range keys {
+			client.Del(context.Background(), k)
+		}
 
 		t.Cleanup(func() {
-			client.Del(context.Background(), "e2e:key_nx", "e2e:key_xx", "e2e:key_get", "e2e:key_ex")
+			for _, k := range keys {
+				client.Del(context.Background(), k)
+			}
 		})
 
 		// --- NX ---
