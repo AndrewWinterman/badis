@@ -22,6 +22,7 @@ PROXY_REPLICAS=2
 VOLUME_SIZE="5Gi"
 STORAGE_CLASS=""
 RUN_TESTS="true"
+RUN_BENCHMARKS="false"
 
 show_help() {
     cat << EOF
@@ -38,6 +39,7 @@ Options:
     --volume-size SIZE         PVC storage size (default: 5Gi)
     --storage-class CLASS      Storage class name (default: null/cluster default)
     --no-tests                 Do not run E2E tests during deployment
+    --benchmarks               Run benchmark suite in the E2E pod
 EOF
 }
 
@@ -54,6 +56,7 @@ while [[ "$#" -gt 0 ]]; do
         --volume-size) VOLUME_SIZE="$2"; shift ;;
         --storage-class) STORAGE_CLASS="$2"; shift ;;
         --no-tests) RUN_TESTS="false" ;;
+        --benchmarks) RUN_BENCHMARKS="true" ;;
         *) echo "Unknown parameter passed: $1"; show_help; exit 1 ;;
     esac
     shift
@@ -86,7 +89,7 @@ if [ "$LOAD_KIND" = true ]; then
 fi
 
 echo "🚀 Deploying to Kubernetes..."
-KUBECFG_ARGS="--tla-str namespace=$NAMESPACE --tla-code replicas=$REPLICAS --tla-code proxyReplicas=$PROXY_REPLICAS --tla-str volumeSize=$VOLUME_SIZE --tla-code runTests=$RUN_TESTS"
+KUBECFG_ARGS="--tla-str namespace=$NAMESPACE --tla-code replicas=$REPLICAS --tla-code proxyReplicas=$PROXY_REPLICAS --tla-str volumeSize=$VOLUME_SIZE --tla-code runTests=$RUN_TESTS --tla-code runBenchmarks=$RUN_BENCHMARKS"
 
 if [ -n "$STORAGE_CLASS" ]; then
     KUBECFG_ARGS="$KUBECFG_ARGS --tla-str storageClass=$STORAGE_CLASS"

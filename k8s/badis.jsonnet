@@ -6,7 +6,8 @@ function(
   image='winterman/badis:latest',
   volumeSize='5Gi',
   storageClass=null,
-  runTests=false
+  runTests=false,
+  runBenchmarks=false
 )
 local name = 'badis';
 local proxyName = 'badis-proxy';
@@ -163,7 +164,7 @@ local testPod = [
           name: 'e2e',
           image: image,
           imagePullPolicy: 'IfNotPresent',
-          command: ['./badis-e2e', '-test.v'],
+          command: ['./badis-e2e', '-test.v'] + (if runBenchmarks then ['-test.bench=.'] else []),
           env: [
             { name: 'BADIS_ADDR', value: name + ':6379' },
             { name: 'RUN_E2E', value: '1' },
