@@ -35,8 +35,8 @@ func TestFSM_Apply(t *testing.T) {
 	log := &raft.Log{Data: data}
 
 	resp := fsm.Apply(log)
-	if resp != nil {
-		t.Fatalf("Expected nil resp, got %v", resp)
+	if resp != "OK" {
+		t.Fatalf("Expected OK resp, got %v", resp)
 	}
 
 	// Verify SET
@@ -60,8 +60,8 @@ func TestFSM_Apply(t *testing.T) {
 	cmd = Command{Op: "DEL", Key: "foo"}
 	data = encodeCommand(cmd)
 	resp = fsm.Apply(&raft.Log{Data: data})
-	if resp != nil {
-		t.Fatalf("Expected nil resp, got %v", resp)
+	if resp != 1 {
+		t.Fatalf("Expected 1 resp, got %v", resp)
 	}
 
 	// Verify DEL

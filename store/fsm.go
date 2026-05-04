@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/dgraph-io/badger/v4"
 	"github.com/hashicorp/go-msgpack/v2/codec"
@@ -19,9 +20,12 @@ func userKey(key string) []byte {
 }
 
 type Command struct {
-	Op   string
-	Key  string
-	Args [][]byte
+	Op        string
+	Key       string
+	Args      [][]byte
+	TTLMs     int64
+	Condition string // "NX" or "XX"
+	ReturnOld bool
 }
 
 type FSM struct {
@@ -62,19 +66,84 @@ func (f *FSM) Apply(log *raft.Log) interface{} {
 		return err
 	}
 
-	return f.db.Update(func(txn *badger.Txn) error {
+	var result interface{}
+	err := f.db.Update(func(txn *badger.Txn) error {
 		switch cmd.Op {
 		case "SET":
 			if len(cmd.Args) == 0 {
 				return fmt.Errorf("SET missing args")
 			}
-			return txn.Set(userKey(cmd.Key), cmd.Args[0])
+			ukey := userKey(cmd.Key)
+			var oldVal []byte
+			exists := false
+
+			item, err := txn.Get(ukey)
+			if err == nil {
+				exists = true
+				if cmd.ReturnOld {
+					oldVal, _ = item.ValueCopy(nil)
+				}
+			} else if err != badger.ErrKeyNotFound {
+				return err
+			}
+
+			setKey := true
+			if cmd.Condition == "NX" && exists {
+				setKey = false
+			}
+			if cmd.Condition == "XX" && !exists {
+				setKey = false
+			}
+
+			if setKey {
+				entry := badger.NewEntry(ukey, cmd.Args[0])
+				if cmd.TTLMs > 0 {
+					entry = entry.WithTTL(time.Duration(cmd.TTLMs) * time.Millisecond)
+				}
+				if err := txn.SetEntry(entry); err != nil {
+					return err
+				}
+			}
+
+			if cmd.ReturnOld {
+				if exists {
+					result = oldVal
+				} else {
+					result = nil
+				}
+				return nil
+			}
+
+			if !setKey {
+				result = nil
+				return nil
+			}
+
+			result = "OK"
+			return nil
 		case "DEL":
-			return txn.Delete(userKey(cmd.Key))
+			_, err := txn.Get(userKey(cmd.Key))
+			if err == badger.ErrKeyNotFound {
+				result = 0
+				return nil
+			} else if err != nil {
+				return err
+			}
+
+			if err := txn.Delete(userKey(cmd.Key)); err != nil {
+				return err
+			}
+			result = 1
+			return nil
 		default:
 			return fmt.Errorf("unknown op: %s", cmd.Op)
 		}
 	})
+
+	if err != nil {
+		return err
+	}
+	return result
 }
 
 // Required Raft FSM methods

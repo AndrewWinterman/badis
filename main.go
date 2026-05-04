@@ -1,7 +1,7 @@
 package main
 
 import (
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
@@ -39,7 +39,8 @@ func main() {
 	if isProxy {
 		shardsStr := getEnvOrDefault("BADIS_SHARDS", "")
 		if shardsStr == "" {
-			log.Fatal("BADIS_SHARDS must be set in proxy mode")
+			slog.Error("BADIS_SHARDS must be set in proxy mode")
+			os.Exit(1)
 		}
 		var shards []string
 		for _, s := range strings.Split(shardsStr, ",") {
@@ -48,7 +49,8 @@ func main() {
 			}
 		}
 		if len(shards) == 0 {
-			log.Fatal("BADIS_SHARDS must contain at least one valid shard")
+			slog.Error("BADIS_SHARDS must contain at least one valid shard")
+			os.Exit(1)
 		}
 		router := proxy.NewRouter(shards)
 		srv = proxy.NewServer(port, router)
@@ -56,7 +58,8 @@ func main() {
 		dbPath := getEnvOrDefault("BADIS_DATA_DIR", "badis-data")
 		fsm, err := store.NewFSM(dbPath)
 		if err != nil {
-			log.Fatalf("Failed to initialize FSM: %v", err)
+			slog.Error("Failed to initialize FSM", "error", err)
+			os.Exit(1)
 		}
 		defer fsm.Close()
 		srv = server.NewServer(port, fsm)
@@ -74,9 +77,9 @@ func main() {
 
 	select {
 	case err := <-errChan:
-		log.Printf("Server failed: %v", err)
+		slog.Error("Server failed", "error", err)
 	case <-quit:
-		log.Println("Shutting down...")
+		slog.Info("Shutting down...")
 	}
 
 	srv.Stop()

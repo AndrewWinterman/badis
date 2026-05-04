@@ -2,7 +2,7 @@ package server
 
 import (
 	"bytes"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -51,6 +51,12 @@ func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
 		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
 		return
 	}
+
+	var argsStr []string
+	for _, arg := range cmd.Args {
+		argsStr = append(argsStr, string(arg))
+	}
+	slog.Info("handleSet called", "args", argsStr)
 
 	c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
 
@@ -230,7 +236,7 @@ func (s *Server) handleDel(conn redcon.Conn, cmd redcon.Command) {
 }
 
 func (s *Server) Start() error {
-	log.Printf("Starting server on %s", s.addr)
+	slog.Info("Starting server", "addr", s.addr)
 	s.redconServer = redcon.NewServer(s.addr, s.mux.ServeRESP,
 		func(conn redcon.Conn) bool { return true },
 		func(conn redcon.Conn, err error) {},

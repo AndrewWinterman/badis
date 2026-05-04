@@ -3,7 +3,7 @@ package proxy
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -138,7 +138,7 @@ func (s *Server) handleCmd(conn redcon.Conn, cmd redcon.Command) {
 }
 
 func (s *Server) Start() error {
-	log.Printf("Starting proxy on %s", s.addr)
+	slog.Info("Starting proxy", "addr", s.addr)
 	return s.server.ListenAndServe()
 }
 
