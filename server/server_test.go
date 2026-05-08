@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"github.com/winterman/badis/config"
+	"github.com/winterman/badis/router"
 	"github.com/winterman/badis/store"
 )
 
@@ -33,7 +35,9 @@ func TestBasicServer(t *testing.T) {
 	}
 
 	addr := getFreePort(t)
-	srv := NewServer(addr, fsm)
+	sm := config.NewSlotMap()
+	r := router.NewRouter(nil, sm, "test-node")
+	srv := NewServer(addr, fsm, r)
 	go func() { _ = srv.Start() }()
 	defer srv.Stop()
 
@@ -67,7 +71,9 @@ func TestSetGet(t *testing.T) {
 	}
 
 	addr := getFreePort(t)
-	srv := NewServer(addr, fsm)
+	sm := config.NewSlotMap()
+	r := router.NewRouter(nil, sm, "test-node")
+	srv := NewServer(addr, fsm, r)
 	go func() { _ = srv.Start() }()
 	defer srv.Stop()
 
@@ -113,7 +119,9 @@ func TestSetModifiers(t *testing.T) {
 	}
 	defer fsm.Close()
 
-	srv := NewServer("127.0.0.1:0", fsm)
+	sm := config.NewSlotMap()
+	r := router.NewRouter(nil, sm, "test-node")
+	srv := NewServer("127.0.0.1:0", fsm, r)
 	go srv.Start()
 	defer srv.Stop()
 
