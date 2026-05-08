@@ -25,7 +25,7 @@ func TestRouter_LocateKeySlot(t *testing.T) {
 
 	// We need a helper to hash a key and find its slot.
 	slot := r.KeyToSlot([]byte("user:123"))
-	if slot < 0 || slot >= 16384 {
+	if slot >= 16384 {
 		t.Errorf("invalid slot: %d", slot)
 	}
 }
