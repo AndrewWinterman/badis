@@ -4,18 +4,14 @@ Badis is a highly available, Redis-compatible distributed key-value store writte
 
 ## Architecture
 
-Badis operates in two primary modes: **Server** and **Proxy**.
+Badis nodes operate as both data servers and intelligent routers within a cluster. The standalone proxy node has been removed in favor of a fully decentralized architecture.
 
-### Server Node
-The core Badis engine. A Server node listens for Redis commands, replicates them across a cluster using Hashicorp Raft, and applies the operations to a local BadgerDB storage engine. 
+### Integrated Router & Data Node
+Each Badis node listens for Redis commands, replicates them across its replica set using Hashicorp Raft, and applies operations to a local BadgerDB storage engine.
 - **Protocol:** Uses `tidwall/redcon` to parse the Redis Serialization Protocol (RESP), allowing you to use standard Redis clients (e.g., `redis-cli`, `go-redis`).
 - **Consensus:** Uses Hashicorp Raft to ensure that all data is strongly consistent, fault-tolerant, and safely replicated to a quorum of nodes before acknowledging a write.
 - **Storage:** Persists state to disk using BadgerDB, a fast, embeddable LSM-tree based key-value database.
-
-### Proxy Node (Sharding)
-A stateless routing layer used to horizontally scale your Badis deployment.
-- **Consistent Hashing:** Uses `buraksezer/consistent` and `xxhash` to deterministically distribute keys across multiple backend Badis Server nodes or Raft clusters.
-- **Connection Pooling:** Maintains efficient connection pools to backend shards and handles the routing of Redis commands completely transparently to the client.
+- **Routing & Gossip:** Nodes use Hashicorp `memberlist` (a gossip protocol) to discover peers and synchronize a global routing table (`SlotMap`). When a node receives a command for a key that belongs to a different shard, it automatically proxies the request to the correct node.
 
 ## Features & Behavior
 
@@ -35,23 +31,19 @@ Badis is configured entirely through Environment Variables.
 
 | Environment Variable | Description | Default |
 | :--- | :--- | :--- |
-| `BADIS_PORT` | The port the server or proxy listens on. | `:6379` |
+| `BADIS_PORT` | The port the server listens on for Redis commands. | `:6379` |
 | `BADIS_DATA_DIR` | Directory to store BadgerDB data and Raft logs. | `badis-data` |
-| `BADIS_PROXY_MODE` | Set to `true` to run as a stateless routing proxy. | `false` |
-| `BADIS_SHARDS` | Comma-separated list of backend addresses (required for proxy). | `""` |
+| `BADIS_GOSSIP_PORT` | The port used for the `memberlist` gossip protocol. | `7946` |
+| `BADIS_JOIN` | Comma-separated list of node addresses (IP:GossipPort) to join an existing cluster. | `""` |
 
-### Running a Server Node
+### Running a Node
 
 ```bash
 # Start a standalone Badis server
-BADIS_PORT=":6379" BADIS_DATA_DIR="./node-1" go run main.go
-```
+BADIS_PORT=":6379" BADIS_GOSSIP_PORT="7946" BADIS_DATA_DIR="./node-1" go run main.go
 
-### Running a Proxy Node
-
-```bash
-# Start a proxy routing to multiple clusters
-BADIS_PROXY_MODE="true" BADIS_SHARDS="localhost:6379,localhost:6380,localhost:6381" BADIS_PORT=":6382" go run main.go
+# Start a second node and join the cluster
+BADIS_PORT=":6380" BADIS_GOSSIP_PORT="7947" BADIS_JOIN="localhost:7946" BADIS_DATA_DIR="./node-2" go run main.go
 ```
 
 ## Built With
