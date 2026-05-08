@@ -24,7 +24,7 @@ The system uses a single binary with two logical roles:
 
 ## 3. Data Migration (Using Redis Replication Protocol)
 
-*   **Trigger:** Admin initiates migration (Slot X: Shard A -> Shard B) via Config Raft.
+*   **Trigger (Auto-Rebalance):** Config Raft watches gossip for Shard topology changes. If a new Shard joins and remains healthy for a configurable timeout (`BADIS_REBALANCE_JOIN_TIMEOUT`, default 60s), Config Raft automatically triggers slot migration to rebalance the cluster. Similarly, if a Shard is permanently removed (`BADIS_REBALANCE_DEAD_TIMEOUT`, default 5m), its slots are re-assigned.
 *   **Protocol:** Use standard Redis replication protocol (`SYNC` / `PSYNC` style).
     1.  Shard B (Target) connects to Shard A (Source) pretending to be a replica for the specific slot.
     2.  Shard A generates a BadgerDB snapshot for Slot X and streams it as a bulk string (like an RDB file).
