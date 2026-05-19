@@ -45,6 +45,24 @@ func NewServer(addr string, fsm *store.FSM, router *router.Router) *Server {
 	mux.HandleFunc("set", s.handleSet)
 	mux.HandleFunc("get", s.handleGet)
 	mux.HandleFunc("del", s.handleDel)
+	mux.HandleFunc("mset", s.handleMSet)
+	mux.HandleFunc("mget", s.handleMGet)
+	mux.HandleFunc("incr", s.handleIncr)
+	mux.HandleFunc("decr", s.handleDecr)
+	mux.HandleFunc("exists", s.handleExists)
+	mux.HandleFunc("expire", s.handleExpire)
+	mux.HandleFunc("ttl", s.handleTTL)
+	mux.HandleFunc("hset", s.handleHSet)
+	mux.HandleFunc("hget", s.handleHGet)
+	mux.HandleFunc("hgetall", s.handleHGetAll)
+	mux.HandleFunc("lpush", s.handleLPush)
+	mux.HandleFunc("rpush", s.handleRPush)
+	mux.HandleFunc("lpop", s.handleLPop)
+	mux.HandleFunc("rpop", s.handleRPop)
+	mux.HandleFunc("lrange", s.handleLRange)
+	mux.HandleFunc("sadd", s.handleSAdd)
+	mux.HandleFunc("smembers", s.handleSMembers)
+	mux.HandleFunc("sismember", s.handleSIsMember)
 	return s
 }
 
@@ -207,46 +225,15 @@ func (s *Server) handleGet(conn redcon.Conn, cmd redcon.Command) {
 }
 
 func (s *Server) handleDel(conn redcon.Conn, cmd redcon.Command) {
-	if len(cmd.Args) != 2 {
+	if len(cmd.Args) < 2 {
 		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
 		return
 	}
-
-	var res interface{}
-	if s.raft != nil {
-		c := store.Command{Op: "DEL", Key: string(cmd.Args[1])}
-		var buf bytes.Buffer
-		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
-		_ = enc.Encode(c)
-		future := s.raft.Apply(buf.Bytes(), 5*time.Second)
-		if err := future.Error(); err != nil {
-			conn.WriteError("ERR " + err.Error())
-			return
-		}
-
-		res = future.Response()
-		if err, ok := res.(error); ok && err != nil {
-			conn.WriteError("ERR " + err.Error())
-			return
-		}
-	} else {
-		// Fallback for tests if raft not setup
-		c := store.Command{Op: "DEL", Key: string(cmd.Args[1])}
-		var buf bytes.Buffer
-		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
-		_ = enc.Encode(c)
-		res = s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
-		if err, ok := res.(error); ok && err != nil {
-			conn.WriteError("ERR " + err.Error())
-			return
-		}
+	var args [][]byte
+	for i := 1; i < len(cmd.Args); i++ {
+		args = append(args, cmd.Args[i])
 	}
-
-	if count, ok := res.(int); ok {
-		conn.WriteInt(count)
-	} else {
-		conn.WriteInt(1)
-	}
+	s.applyCommand(conn, store.Command{Op: "DEL", Args: args})
 }
 
 func (s *Server) getClient(addr string) *redis.Client {
@@ -364,5 +351,296 @@ func (s *Server) Stop() {
 	s.mu.Unlock()
 	if s.redconServer != nil {
 		_ = s.redconServer.Close()
+	}
+}
+func (s *Server) handleMSet(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) < 3 || len(cmd.Args)%2 == 0 {
+		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
+		return
+	}
+	var args [][]byte
+	for i := 1; i < len(cmd.Args); i++ {
+		args = append(args, cmd.Args[i])
+	}
+	s.applyCommand(conn, store.Command{Op: "MSET", Args: args})
+}
+
+func (s *Server) handleMGet(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) < 2 {
+		conn.WriteError("ERR wrong number of arguments for '" + string(cmd.Args[0]) + "' command")
+		return
+	}
+	var keys []string
+	for i := 1; i < len(cmd.Args); i++ {
+		keys = append(keys, string(cmd.Args[i]))
+	}
+	vals, err := s.fsm.GetStrings(keys)
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
+	conn.WriteArray(len(vals))
+	for _, val := range vals {
+		if val == nil {
+			conn.WriteNull()
+		} else {
+			conn.WriteBulk(val)
+		}
+	}
+}
+
+func (s *Server) handleIncr(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	s.applyCommand(conn, store.Command{Op: "INCR", Key: string(cmd.Args[1])})
+}
+
+func (s *Server) handleDecr(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	s.applyCommand(conn, store.Command{Op: "DECR", Key: string(cmd.Args[1])})
+}
+
+func (s *Server) handleExists(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) < 2 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	var keys []string
+	for i := 1; i < len(cmd.Args); i++ {
+		keys = append(keys, string(cmd.Args[i]))
+	}
+	count, err := s.fsm.Exists(keys)
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
+	conn.WriteInt(count)
+}
+
+func (s *Server) handleExpire(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 3 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	secs, err := strconv.ParseInt(string(cmd.Args[2]), 10, 64)
+	if err != nil {
+		conn.WriteError("ERR value is not an integer")
+		return
+	}
+	s.applyCommand(conn, store.Command{Op: "EXPIRE", Key: string(cmd.Args[1]), TTLMs: secs * 1000})
+}
+
+func (s *Server) handleTTL(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	ttl, err := s.fsm.TTL(string(cmd.Args[1]))
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
+	conn.WriteInt64(ttl)
+}
+
+func (s *Server) handleHSet(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) < 4 || len(cmd.Args)%2 != 0 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	var args [][]byte
+	for i := 2; i < len(cmd.Args); i++ {
+		args = append(args, cmd.Args[i])
+	}
+	s.applyCommand(conn, store.Command{Op: "HSET", Key: string(cmd.Args[1]), Args: args})
+}
+
+func (s *Server) handleHGet(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 3 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	val, err := s.fsm.HGet(string(cmd.Args[1]), string(cmd.Args[2]))
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
+	if val == nil {
+		conn.WriteNull()
+	} else {
+		conn.WriteBulk(val)
+	}
+}
+
+func (s *Server) handleHGetAll(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	hash, err := s.fsm.HGetAll(string(cmd.Args[1]))
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
+	conn.WriteArray(len(hash) * 2)
+	for k, v := range hash {
+		conn.WriteBulkString(k)
+		conn.WriteBulkString(v)
+	}
+}
+
+func (s *Server) handleLPush(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) < 3 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	var args [][]byte
+	for i := 2; i < len(cmd.Args); i++ {
+		args = append(args, cmd.Args[i])
+	}
+	s.applyCommand(conn, store.Command{Op: "LPUSH", Key: string(cmd.Args[1]), Args: args})
+}
+
+func (s *Server) handleRPush(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) < 3 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	var args [][]byte
+	for i := 2; i < len(cmd.Args); i++ {
+		args = append(args, cmd.Args[i])
+	}
+	s.applyCommand(conn, store.Command{Op: "RPUSH", Key: string(cmd.Args[1]), Args: args})
+}
+
+func (s *Server) handleLPop(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	s.applyCommand(conn, store.Command{Op: "LPOP", Key: string(cmd.Args[1])})
+}
+
+func (s *Server) handleRPop(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	s.applyCommand(conn, store.Command{Op: "RPOP", Key: string(cmd.Args[1])})
+}
+
+func (s *Server) handleLRange(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 4 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	start, err1 := strconv.Atoi(string(cmd.Args[2]))
+	stop, err2 := strconv.Atoi(string(cmd.Args[3]))
+	if err1 != nil || err2 != nil {
+		conn.WriteError("ERR value is not an integer")
+		return
+	}
+	list, err := s.fsm.LRange(string(cmd.Args[1]), start, stop)
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
+	conn.WriteArray(len(list))
+	for _, v := range list {
+		conn.WriteBulkString(v)
+	}
+}
+
+func (s *Server) handleSAdd(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) < 3 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	var args [][]byte
+	for i := 2; i < len(cmd.Args); i++ {
+		args = append(args, cmd.Args[i])
+	}
+	s.applyCommand(conn, store.Command{Op: "SADD", Key: string(cmd.Args[1]), Args: args})
+}
+
+func (s *Server) handleSMembers(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 2 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	members, err := s.fsm.SMembers(string(cmd.Args[1]))
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
+	conn.WriteArray(len(members))
+	for _, m := range members {
+		conn.WriteBulkString(m)
+	}
+}
+
+func (s *Server) handleSIsMember(conn redcon.Conn, cmd redcon.Command) {
+	if len(cmd.Args) != 3 {
+		conn.WriteError("ERR wrong number of arguments")
+		return
+	}
+	isMember, err := s.fsm.SIsMember(string(cmd.Args[1]), string(cmd.Args[2]))
+	if err != nil {
+		conn.WriteError(err.Error())
+		return
+	}
+	conn.WriteInt(isMember)
+}
+
+func (s *Server) applyCommand(conn redcon.Conn, c store.Command) {
+	var res interface{}
+	if s.raft != nil {
+		var buf bytes.Buffer
+		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
+		_ = enc.Encode(c)
+		future := s.raft.Apply(buf.Bytes(), 5*time.Second)
+		if err := future.Error(); err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
+
+		res = future.Response()
+		if err, ok := res.(error); ok && err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
+	} else {
+		// Fallback for tests if raft not setup
+		var buf bytes.Buffer
+		enc := codec.NewEncoder(&buf, &codec.MsgpackHandle{})
+		_ = enc.Encode(c)
+		res = s.fsm.Apply(&raft.Log{Data: buf.Bytes()})
+		if err, ok := res.(error); ok && err != nil {
+			conn.WriteError("ERR " + err.Error())
+			return
+		}
+	}
+
+	if res == nil {
+		conn.WriteNull()
+		return
+	}
+	
+	switch v := res.(type) {
+	case string:
+		conn.WriteString(v)
+	case []byte:
+		conn.WriteBulk(v)
+	case int:
+		conn.WriteInt(v)
+	case int64:
+		conn.WriteInt64(v)
+	default:
+		conn.WriteString("OK")
 	}
 }
