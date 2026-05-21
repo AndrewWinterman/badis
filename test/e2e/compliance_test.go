@@ -202,3 +202,42 @@ func TestCompliance_Sets(t *testing.T) {
 		}
 	})
 }
+
+func TestCompliance_Lua(t *testing.T) {
+	client, ctx := setupComplianceClient(t)
+
+	t.Run("EVAL simple return", func(t *testing.T) {
+		val, err := client.Eval(ctx, `return "hello lua"`, []string{}).Result()
+		if err != nil || val != "hello lua" {
+			t.Fatalf("EVAL failed: got %v, err: %v", val, err)
+		}
+	})
+
+	t.Run("EVAL redis.call", func(t *testing.T) {
+		client.Del(ctx, "comp:lua:1")
+		t.Cleanup(func() { client.Del(ctx, "comp:lua:1") })
+
+		// Set a key and read it
+		val, err := client.Eval(ctx, `
+			redis.call("SET", KEYS[1], ARGV[1])
+			return redis.call("GET", KEYS[1])
+		`, []string{"comp:lua:1"}, "lua_value").Result()
+		if err != nil || val != "lua_value" {
+			t.Fatalf("EVAL redis.call failed: got %v, err: %v", val, err)
+		}
+	})
+
+	t.Run("SCRIPT LOAD and EVALSHA", func(t *testing.T) {
+		script := `return ARGV[1]`
+		sha, err := client.ScriptLoad(ctx, script).Result()
+		if err != nil || sha == "" {
+			t.Fatalf("SCRIPT LOAD failed: got %v, err: %v", sha, err)
+		}
+
+		val, err := client.EvalSha(ctx, sha, []string{}, "loaded_value").Result()
+		if err != nil || val != "loaded_value" {
+			t.Fatalf("EVALSHA failed: got %v, err: %v", val, err)
+		}
+	})
+}
+
