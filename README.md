@@ -46,6 +46,15 @@ BADIS_PORT=":6379" BADIS_GOSSIP_PORT="7946" BADIS_DATA_DIR="./node-1" go run mai
 BADIS_PORT=":6380" BADIS_GOSSIP_PORT="7947" BADIS_JOIN="localhost:7946" BADIS_DATA_DIR="./node-2" go run main.go
 ```
 
+## End-to-End Testing
+
+Badis includes a black-box end-to-end (e2e) test suite written in Go (`test/e2e/e2e_test.go`). The tests interact with the cluster over the standard Redis protocol using `go-redis`. 
+
+To run e2e tests in Kubernetes:
+1. The test binary (`badis-e2e`) is compiled and packaged in the `badis` Docker image.
+2. Generating Kubernetes manifests with `kubecfg update k8s/badis.jsonnet --tla-code runTests=true` spawns a dedicated test Pod.
+3. The test Pod routes traffic through the Badis Proxy to backend shards, verifying end-to-end functionality before exiting 0 on success.
+
 ## Built With
 - [BadgerDB](https://github.com/dgraph-io/badger) - Fast key-value DB in Go.
 - [Hashicorp Raft](https://github.com/hashicorp/raft) - Distributed consensus.

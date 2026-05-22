@@ -7,11 +7,13 @@ function(
   volumeSize='5Gi',
   storageClass=null,
   runTests=false,
-  runBenchmarks=false
+  runBenchmarks=false,
+  runGoRedisTests=false
 )
 local name = 'badis';
 local proxyName = 'badis-proxy';
 local testName = 'badis-e2e-test';
+local goRedisTestName = 'go-redis-suite-test';
 
 local selector = { app: name };
 local proxySelector = { app: proxyName };
@@ -175,4 +177,29 @@ local testPod = [
   }
 ];
 
-nsResource + baseResources + (if runTests then testPod else [])
+local goRedisTestPod = [
+  {
+    apiVersion: 'v1',
+    kind: 'Pod',
+    metadata: {
+      name: goRedisTestName,
+      namespace: namespace,
+    },
+    spec: {
+      restartPolicy: 'Never',
+      containers: [
+        {
+          name: 'go-redis',
+          image: 'golang:alpine',
+          command: ['/bin/sh', '-c', 'apk add --no-cache git gcc musl-dev socat && git clone --depth 1 https://github.com/redis/go-redis.git /go-redis && (socat TCP-LISTEN:6379,fork TCP:${BADIS_ADDR} &) && sleep 5 && cd /go-redis && go test . -v -run "^TestGinkgoSuite$" -ginkgo.focus "strings|keys|hashes|lists|sets" -ginkgo.skip "Redis Ring|ClusterClient|ACL Categories"'],
+          env: [
+            { name: 'BADIS_ADDR', value: name + ':6379' },
+            { name: 'RE_CLUSTER', value: 'true' },
+          ],
+        },
+      ],
+    },
+  }
+];
+
+nsResource + baseResources + (if runTests then testPod else []) + (if runGoRedisTests then goRedisTestPod else [])
