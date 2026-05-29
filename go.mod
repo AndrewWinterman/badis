@@ -3,6 +3,7 @@ module github.com/winterman/badis
 go 1.25.7
 
 require (
+	github.com/anishathalye/porcupine v1.1.0
 	github.com/buraksezer/consistent v0.10.0
 	github.com/dgraph-io/badger/v4 v4.9.1
 	github.com/hashicorp/go-msgpack/v2 v2.1.5

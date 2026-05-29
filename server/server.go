@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
+	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,18 +29,29 @@ type Server struct {
 	fsm          *store.FSM
 	raft         *raft.Raft
 	router       *router.Router
+	shardID      string
 	clients      map[string]*redis.Client
 	mu           sync.RWMutex
+	logOutput    io.Writer
+	logger       *slog.Logger
 }
 
-func NewServer(addr string, fsm *store.FSM, router *router.Router) *Server {
+func NewServer(addr string, fsm *store.FSM, router *router.Router, shardID string) *Server {
+	return NewServerWithOptions(addr, fsm, router, shardID, WithLogOutput(os.Stderr))
+}
+
+func NewServerWithOptions(addr string, fsm *store.FSM, router *router.Router, shardID string, opts ...Option) *Server {
 	mux := redcon.NewServeMux()
+	resolved := resolveOptions(opts)
 	s := &Server{
-		addr:    addr,
-		mux:     mux,
-		fsm:     fsm,
-		router:  router,
-		clients: make(map[string]*redis.Client),
+		addr:      addr,
+		mux:       mux,
+		fsm:       fsm,
+		router:    router,
+		shardID:   shardID,
+		clients:   make(map[string]*redis.Client),
+		logOutput: resolved.logOutput,
+		logger:    slog.New(slog.NewTextHandler(resolved.logOutput, nil)),
 	}
 
 	mux.HandleFunc("ping", func(conn redcon.Conn, cmd redcon.Command) {
@@ -173,9 +188,21 @@ func (s *Server) handleClient(conn redcon.Conn, cmd redcon.Command) {
 	}
 }
 
-func (s *Server) SetupRaft(localID string, transport raft.Transport, snapshotStore raft.SnapshotStore) error {
+func (s *Server) SetupRaft(localID string, raftBindAddr string) error {
 	config := raft.DefaultConfig()
 	config.LocalID = raft.ServerID(localID)
+	config.LogOutput = s.logOutput
+
+	addr, err := net.ResolveTCPAddr("tcp", raftBindAddr)
+	if err != nil {
+		return err
+	}
+	transport, err := raft.NewTCPTransport(raftBindAddr, addr, 3, 10*time.Second, s.logOutput)
+	if err != nil {
+		return err
+	}
+
+	snapshotStore := raft.NewDiscardSnapshotStore()
 
 	r, err := raft.NewRaft(config, s.fsm, s.fsm, s.fsm, snapshotStore, transport)
 	if err != nil {
@@ -183,6 +210,10 @@ func (s *Server) SetupRaft(localID string, transport raft.Transport, snapshotSto
 	}
 	s.raft = r
 	return nil
+}
+
+func (s *Server) GetRaft() *raft.Raft {
+	return s.raft
 }
 
 func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
@@ -195,7 +226,7 @@ func (s *Server) handleSet(conn redcon.Conn, cmd redcon.Command) {
 	for _, arg := range cmd.Args {
 		argsStr = append(argsStr, string(arg))
 	}
-	slog.Info("handleSet called", "args", argsStr)
+	s.logger.Info("handleSet called", "args", argsStr)
 
 	c := store.Command{Op: "SET", Key: string(cmd.Args[1]), Args: [][]byte{cmd.Args[2]}}
 
@@ -513,12 +544,49 @@ func (s *Server) handleCmd(conn redcon.Conn, cmd redcon.Command) {
 }
 
 func (s *Server) Start() error {
-	slog.Info("Starting server", "addr", s.addr)
+	s.logger.Info("Starting server", "addr", s.addr)
 	s.redconServer = redcon.NewServer(s.addr, s.handleCmd,
 		func(conn redcon.Conn) bool { return true },
 		func(conn redcon.Conn, err error) {},
 	)
 	return s.redconServer.ListenAndServe()
+}
+
+func (s *Server) handleRaftJoin(w http.ResponseWriter, r *http.Request) {
+	nodeID := r.URL.Query().Get("id")
+	addr := r.URL.Query().Get("addr")
+
+	if s.raft.State() != raft.Leader {
+		http.Error(w, "Not the leader", http.StatusBadRequest)
+		return
+	}
+
+	configFuture := s.raft.GetConfiguration()
+	if err := configFuture.Error(); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	for _, srv := range configFuture.Configuration().Servers {
+		if srv.ID == raft.ServerID(nodeID) || srv.Address == raft.ServerAddress(addr) {
+			// Already joined
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
+
+	f := s.raft.AddVoter(raft.ServerID(nodeID), raft.ServerAddress(addr), 0, 0)
+	if f.Error() != nil {
+		http.Error(w, f.Error().Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) StartAdmin(adminPort string) {
+	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("/join", s.handleRaftJoin)
+	go http.ListenAndServe(adminPort, adminMux)
 }
 
 func (s *Server) Stop() {

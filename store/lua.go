@@ -124,10 +124,10 @@ func (f *FSM) runLua(txn *badger.Txn, script string, evalArgs [][]byte) (interfa
 	redisTable := L.NewTable()
 	L.SetField(redisTable, "call", L.NewFunction(func(L *lua.LState) int {
 		res, err := f.luaRedisCall(txn, L)
-		if err != nil {
-			L.RaiseError(err.Error())
-			return 0
-		}
+			if err != nil {
+				L.RaiseError("%s", err.Error())
+				return 0
+			}
 		L.Push(res)
 		return 1
 	}))

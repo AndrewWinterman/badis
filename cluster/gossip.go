@@ -43,6 +43,39 @@ func NewGossip(bindAddr, nodeName string, joinAddrs []string) (*Gossip, error) {
 	return &Gossip{list: list}, nil
 }
 
+func NewGossipWithOptions(bindAddr, nodeName string, joinAddrs []string, opts ...Option) (*Gossip, error) {
+	config := memberlist.DefaultLocalConfig()
+	config.Name = nodeName
+	resolved := resolveOptions(opts)
+	config.LogOutput = resolved.logOutput
+
+	host, portStr, err := net.SplitHostPort(bindAddr)
+	if err != nil {
+		return nil, err
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return nil, err
+	}
+	config.BindAddr = host
+	config.BindPort = port
+
+	list, err := memberlist.Create(config)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(joinAddrs) > 0 {
+		_, err = list.Join(joinAddrs)
+		if err != nil {
+			list.Shutdown()
+			return nil, err
+		}
+	}
+
+	return &Gossip{list: list}, nil
+}
+
 func (g *Gossip) BindAddr() string {
 	return fmt.Sprintf("%s:%d", g.list.LocalNode().Addr, g.list.LocalNode().Port)
 }

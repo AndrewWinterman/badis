@@ -1,0 +1,12 @@
+--- main.go
++++ main.go
+@@ -32,6 +32,9 @@
+ }
+ 
+ func main() {
++	for _, e := range os.Environ() {
++		fmt.Println("ENV:", e)
++	}
+ 	port := getEnvOrDefault("BADIS_PORT", ":6379")
+ 	if !strings.HasPrefix(port, ":") {
+ 		port = ":" + port
